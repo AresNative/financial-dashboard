@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, query, where, getDocs, updateDoc, doc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, updateDoc, deleteDoc, Timestamp, writeBatch, doc } from 'firebase/firestore';
 import { Calendar, DollarSign, CheckCircle, Clock, Trash2, Plus } from 'lucide-react';
 import { db } from '../services/firebase';
 import { useAuth } from '../template/auth';
@@ -10,6 +10,7 @@ interface Payment {
     amount: number;
     dueDate: Date;
     isPaid: boolean;
+    transactionId?: string; // ID de la transacción de gasto creada
 }
 
 export const PaymentManager: React.FC = () => {
@@ -36,6 +37,51 @@ export const PaymentManager: React.FC = () => {
         loadPayments();
     }, [user]);
 
+    // Al marcar como pagado, crea una transacción de gasto automática
+    const togglePaid = async (payment: Payment) => {
+        if (!user) return;
+        const batch = writeBatch(db);
+        const paymentRef = doc(db, 'payments', payment.id);
+
+        if (!payment.isPaid) {
+            // Crear transacción de gasto
+            const transactionRef = doc(collection(db, 'transactions'));
+            batch.set(transactionRef, {
+                userId: user.uid,
+                type: 'expense',
+                amount: payment.amount,
+                category: 'Pago Programado',
+                description: payment.title,
+                date: Timestamp.fromDate(payment.dueDate),
+                createdAt: Timestamp.now(),
+                paymentId: payment.id
+            });
+            batch.update(paymentRef, { isPaid: true, transactionId: transactionRef.id });
+        } else {
+            // Si se desmarca, eliminar la transacción asociada
+            if (payment.transactionId) {
+                const transRef = doc(db, 'transactions', payment.transactionId);
+                batch.delete(transRef);
+            }
+            batch.update(paymentRef, { isPaid: false, transactionId: null });
+        }
+        await batch.commit();
+        loadPayments();
+    };
+
+    const deletePayment = async (payment: Payment) => {
+        if (!user) return;
+        const batch = writeBatch(db);
+        const paymentRef = doc(db, 'payments', payment.id);
+        batch.delete(paymentRef);
+        if (payment.transactionId) {
+            const transRef = doc(db, 'transactions', payment.transactionId);
+            batch.delete(transRef);
+        }
+        await batch.commit();
+        loadPayments();
+    };
+
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !title || !amount || !dueDate) return;
@@ -56,24 +102,15 @@ export const PaymentManager: React.FC = () => {
         loadPayments();
     };
 
-    const togglePaid = async (id: string, currentStatus: boolean) => {
-        await updateDoc(doc(db, 'payments', id), { isPaid: !currentStatus });
-        loadPayments();
-    };
-
-    const deletePayment = async (id: string) => {
-        await deleteDoc(doc(db, 'payments', id));
-        loadPayments();
-    };
-
     const totalPending = payments.filter(p => !p.isPaid).reduce((sum, p) => sum + p.amount, 0);
 
     return (
         <div className="bg-gray-800/40 backdrop-blur-sm rounded-3xl border border-white/10 p-6 shadow-xl">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h3 className="text-2xl font-bold text-white">📅 Pagos Pendientes</h3>
+                    <h3 className="text-2xl font-bold text-white">📅 Pagos Programados</h3>
                     <p className="text-gray-400 text-sm">Total pendiente: <span className="text-red-400 font-bold">${totalPending.toFixed(2)}</span></p>
+                    <p className="text-gray-500 text-xs">Al marcar "Pagar" se registrará automáticamente en tus gastos</p>
                 </div>
                 <button
                     onClick={() => setShowForm(true)}
@@ -101,13 +138,13 @@ export const PaymentManager: React.FC = () => {
                         </div>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => togglePaid(payment.id, payment.isPaid)}
+                                onClick={() => togglePaid(payment)}
                                 className={`px-3 py-1 rounded-lg text-sm font-semibold transition ${payment.isPaid ? 'bg-gray-700 text-gray-300' : 'bg-green-600 text-white hover:bg-green-500'}`}
                             >
                                 {payment.isPaid ? 'Desmarcar' : 'Pagar'}
                             </button>
                             <button
-                                onClick={() => deletePayment(payment.id)}
+                                onClick={() => deletePayment(payment)}
                                 className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
                             >
                                 <Trash2 className="w-4 h-4" />
@@ -120,7 +157,7 @@ export const PaymentManager: React.FC = () => {
             {showForm && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-gray-900 rounded-3xl border border-white/10 p-6 w-full max-w-md">
-                        <h3 className="text-xl font-bold text-white mb-4">Nuevo Pago</h3>
+                        <h3 className="text-xl font-bold text-white mb-4">Nuevo Pago Programado</h3>
                         <form onSubmit={handleAdd} className="space-y-3">
                             <input type="text" placeholder="Concepto (Ej: Coppel, Netflix)" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-white" required />
                             <input type="number" placeholder="Monto" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-white" required />
