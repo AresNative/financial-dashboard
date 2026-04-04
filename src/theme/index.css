@@ -1,0 +1,74 @@
+/* globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos personalizados */
+@layer base {
+    :root {
+        --background: #ffffff;
+        --foreground: #171717;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --background: #0a0a0a;
+            --foreground: #ededed;
+        }
+    }
+
+    body {
+        @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+        font-feature-settings: "rlig" 1, "calt" 1;
+    }
+
+    /* Smooth scrolling */
+    html {
+        scroll-behavior: smooth;
+    }
+
+    /* Selection color */
+    ::selection {
+        @apply bg-blue-500/20 text-blue-700 dark:text-blue-300;
+    }
+}
+
+@layer components {
+
+    /* Timeline styles for experience page */
+    .timeline-container {
+        @apply relative max-w-4xl mx-auto px-4;
+    }
+
+    .timeline-container::before {
+        @apply content-[''] absolute left-1/2 transform -translate-x-1/2 top-0 bottom-0 w-1 bg-gray-300 dark:bg-gray-700;
+    }
+
+    .timeline-item {
+        @apply relative mb-12 w-full;
+    }
+
+    .timeline-item:nth-child(odd) {
+        @apply pl-0 pr-[calc(50%+2rem)];
+    }
+
+    .timeline-item:nth-child(even) {
+        @apply pl-[calc(50%+2rem)] pr-0;
+    }
+
+    .timeline-dot {
+        @apply absolute w-4 h-4 rounded-full border-4 border-white dark:border-gray-900 bg-blue-500 top-6;
+    }
+
+    .timeline-item:nth-child(odd) .timeline-dot {
+        @apply right-[calc(2rem-0.5rem)];
+    }
+
+    .timeline-item:nth-child(even) .timeline-dot {
+        @apply left-[calc(2rem-0.5rem)];
+    }
+
+    .timeline-content {
+        @apply bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg border border-gray-200 dark:border-gray-700;
+    }
+}
