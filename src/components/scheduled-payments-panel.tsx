@@ -1,5 +1,4 @@
 // components/scheduled-payments-panel.tsx
-import React from "react";
 import { CheckCircle2, Trash2, AlertTriangle, Clock, Calendar, Plus, RefreshCw } from "lucide-react";
 import type { ScheduledPayment, Frequency } from "../hooks/use-scheduled-payments";
 

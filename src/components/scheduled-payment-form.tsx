@@ -1,5 +1,5 @@
 // components/scheduled-payment-form.tsx
-import React, { useState } from "react";
+import { useState } from "react";
 import { X, Check } from "lucide-react";
 import type { Frequency } from "../hooks/use-scheduled-payments";
 

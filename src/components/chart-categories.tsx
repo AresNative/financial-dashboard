@@ -1,5 +1,4 @@
 // components/chart-categories.tsx
-import React from "react";
 import Chart from "react-apexcharts";
 import { AnalyticsService } from "../services/analytics.service";
 

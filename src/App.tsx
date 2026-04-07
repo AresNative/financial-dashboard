@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Wallet, LogOut, PlusCircle, Bell, TrendingUp, CreditCard, BarChart2 } from "lucide-react";
 import { useAuth } from "./template/auth";
 import { useTransactions } from "./hooks/use-transactions";

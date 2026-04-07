@@ -1,5 +1,5 @@
 // components/investment-form.tsx
-import React, { useState } from "react";
+import { useState } from "react";
 import { X, Check } from "lucide-react";
 import type { InvestmentType } from "../hooks/use-investments";
 

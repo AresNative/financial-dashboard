@@ -1,6 +1,6 @@
 // components/dashboard-panel.tsx
-import React, { useMemo } from "react";
-import { ArrowUpRight, ArrowDownRight, Trash2, TrendingUp, TrendingDown, Minus, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
+import { useMemo } from "react";
+import { ArrowUpRight, ArrowDownRight, Trash2, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { IncomeExpenseChart } from "./chart-income-expense";
 import { CategoryChart } from "./chart-categories";
 import { InsightsPanel } from "./insights-panel";

@@ -1,5 +1,5 @@
 // components/investments-panel.tsx
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { TrendingUp, TrendingDown, Plus, Trash2, ChevronRight } from "lucide-react";
 import type { Investment, InvestmentType } from "../hooks/use-investments";
 
@@ -68,7 +68,6 @@ interface Props {
 
 export function InvestmentsPanel({
     investments,
-    totalInvested,
     totalCurrentValue,
     totalGain,
     totalGainPct,

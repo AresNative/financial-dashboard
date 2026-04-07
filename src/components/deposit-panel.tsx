@@ -1,5 +1,5 @@
 // components/deposit-panel.tsx
-import React, { useState } from "react";
+import { useState } from "react";
 import { Plus, Star, Trash2, CreditCard, Check, X } from "lucide-react";
 import type { Card, CardBrand, CardType } from "../hooks/use-cards";
 
