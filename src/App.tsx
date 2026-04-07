@@ -1,277 +1,232 @@
-import React, { useState, useEffect } from 'react';
-import {
-  LayoutDashboard,
-  TrendingUp,
-  CreditCard,
-  LogOut,
-  PlusCircle,
-  Wallet,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  BarChart3,
-  CalendarDays,
-  UserCircle,
-  Menu,
-  X
-} from 'lucide-react';
-import Chart from 'react-apexcharts';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { InvestmentCalculator } from './components/investment-calculator';
-import { PaymentManager } from './components/payment-manager';
-import { ProfileView } from './components/profile-view';
-import { Suggestions } from './components/suggestions';
-import { TransactionForm } from './components/transaction-form';
-import { db } from './services/firebase';
-import { useAuth } from './template/auth';
+import React, { useState } from "react";
+import { Wallet, LogOut, PlusCircle, Bell, TrendingUp, CreditCard, BarChart2 } from "lucide-react";
+import { useAuth } from "./template/auth";
+import { useTransactions } from "./hooks/use-transactions";
+import { useScheduledPayments } from "./hooks/use-scheduled-payments";
+import { useInvestments } from "./hooks/use-investments";
+import { useCards } from "./hooks/use-cards";
+import { DashboardPanel } from "./components/dashboard-panel";
+import { TransactionForm } from "./components/transaction-form";
+import { ScheduledPaymentsPanel } from "./components/scheduled-payments-panel";
+import { ScheduledPaymentForm } from "./components/scheduled-payment-form";
+import { InvestmentsPanel } from "./components/investments-panel";
+import { InvestmentForm } from "./components/investment-form";
+import { DepositPanel } from "./components/deposit-panel";
 
-interface Transaction {
-  id: string;
-  amount: number;
-  type: 'income' | 'expense';
-  category: string;
-  date: Date;
-  description?: string;
-}
+type ActiveTab = "dashboard" | "payments" | "investments" | "deposit";
 
-interface Payment {
-  id: string;
-  title: string;
-  amount: number;
-  dueDate: Date;
-  isPaid: boolean;
-}
-
-function App() {
+export default function App() {
   const { user, logout, signInWithGoogle } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'payments' | 'investment' | 'profile'>('dashboard');
-  const [showTransactionForm, setShowTransactionForm] = useState(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard");
+  const [showTxForm, setShowTxForm] = useState(false);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showInvestmentForm, setShowInvestmentForm] = useState(false);
 
-  const loadData = async () => {
-    if (!user) return;
-    setLoading(true);
-    // Transacciones
-    const qTrans = query(collection(db, 'transactions'), where('userId', '==', user.uid));
-    const snapTrans = await getDocs(qTrans);
-    const loadedTrans = snapTrans.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date.toDate()
-    })) as Transaction[];
-    setTransactions(loadedTrans.sort((a, b) => b.date.getTime() - a.date.getTime()));
+  const { transactions, loading: txLoading, add: addTransaction, remove: removeTransaction } = useTransactions(user?.uid);
+  const { payments, loading: paymentsLoading, add: addPayment, remove: removePayment, markAsPaid, getDueToday, getUpcoming, getOverdue } = useScheduledPayments(user?.uid);
+  const { investments, loading: invLoading, add: addInvestment, remove: removeInvestment, project, totalInvested, totalCurrentValue, totalGain, totalGainPct } = useInvestments(user?.uid);
+  const { cards, add: addCard, remove: removeCard, setDefault } = useCards(user?.uid);
 
-    // Pagos
-    const qPay = query(collection(db, 'payments'), where('userId', '==', user.uid));
-    const snapPay = await getDocs(qPay);
-    const loadedPay = snapPay.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      dueDate: doc.data().dueDate.toDate()
-    })) as Payment[];
-    setPayments(loadedPay);
-    setLoading(false);
+  const alertCount = getOverdue().length + getDueToday().length;
+
+  const handleDeposit = (amount: number, _cardId: string, description: string) => {
+    addTransaction({ type: "income", amount, category: "other", description, date: new Date(), userId: user!.uid });
   };
 
-  useEffect(() => {
-    if (user) loadData();
-  }, [user]);
-
-  const getMonthlyData = (month: number, year: number) => {
-    const filtered = transactions.filter(t => {
-      return t.date.getMonth() === month && t.date.getFullYear() === year;
-    });
-    const income = filtered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    const expense = filtered.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-    return { income, expense, savings: income - expense };
-  };
-
-  const currentData = getMonthlyData(currentMonth, currentYear);
-  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-  const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-  const prevData = getMonthlyData(prevMonth, prevYear);
-  const savingsChange = prevData.savings !== 0 ? ((currentData.savings - prevData.savings) / Math.abs(prevData.savings)) * 100 : currentData.savings > 0 ? 100 : 0;
-
-  const expenseByCategory = () => {
-    const categories: Record<string, number> = {};
-    const monthExpenses = transactions.filter(t => t.type === 'expense' && t.date.getMonth() === currentMonth && t.date.getFullYear() === currentYear);
-    monthExpenses.forEach(t => {
-      categories[t.category] = (categories[t.category] || 0) + t.amount;
-    });
-    return Object.entries(categories).map(([name, amount]) => ({ name, amount }));
-  };
-
-  const categoryData = expenseByCategory();
-  const topCategory = categoryData.length > 0 ? categoryData.reduce((max, cat) => cat.amount > max.amount ? cat : max, categoryData[0]) : null;
-
-  const monthlyComparisonChart = {
-    options: {
-      chart: { type: 'bar' as const, toolbar: { show: false }, background: 'transparent' },
-      xaxis: { categories: ['Mes Actual', 'Mes Anterior'], labels: { style: { colors: '#cbd5e1' } } },
-      colors: ['#06b6d4', '#f59e0b', '#10b981'],
-      plotOptions: { bar: { borderRadius: 10, horizontal: false } },
-      tooltip: { theme: 'dark' as const, y: { formatter: (val: number) => `$${val.toFixed(2)}` } },
-      legend: { labels: { colors: '#fff' } }
-    },
-    series: [
-      { name: 'Ingresos', data: [currentData.income, prevData.income] },
-      { name: 'Gastos', data: [currentData.expense, prevData.expense] },
-      { name: 'Ahorro', data: [currentData.savings, prevData.savings] }
-    ]
-  };
-
-  const pieChartOptions = {
-    chart: { type: 'donut' as const, background: 'transparent' },
-    labels: categoryData.map(c => c.name),
-    theme: { mode: 'dark' as const },
-    tooltip: { y: { formatter: (val: number) => `$${val.toFixed(2)}` } },
-    legend: { labels: { colors: '#fff' }, position: 'bottom' as const }
-  };
-
+  // LOGIN
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black flex items-center justify-center p-4">
-        <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-8 text-center max-w-md border border-white/10 shadow-2xl">
-          <Wallet className="w-20 h-20 text-cyan-400 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-white mb-2">Finanzas Inteligentes</h1>
-          <p className="text-gray-300 mb-6">Controla tus gastos, ahorra e invierte con inteligencia</p>
-          <button onClick={signInWithGoogle} className="bg-gradient-to-r from-cyan-500 to-purple-600 px-8 py-3 rounded-xl text-white font-bold hover:scale-105 transition flex items-center gap-2 mx-auto">
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="google" />
+      <div className="min-h-screen flex items-center justify-center bg-[#050810] text-white relative overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-violet-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
+        </div>
+        <div className="text-center space-y-8 relative z-10 px-6">
+          <div className="flex justify-center">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center shadow-2xl shadow-cyan-500/20">
+                <Wallet className="w-9 h-9 text-white" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-400 rounded-full border-2 border-[#050810] animate-pulse" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+              Finanzas Intelligence
+            </h1>
+            <p className="text-white/40 text-base font-light tracking-wide">Control financiero en tiempo real</p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-2">
+            {["Tiempo real", "Pagos programados", "Inversiones", "Depósitos"].map((f) => (
+              <span key={f} className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/50 text-xs">{f}</span>
+            ))}
+          </div>
+          <button
+            onClick={signInWithGoogle}
+            className="flex items-center gap-3 mx-auto bg-white text-gray-900 px-8 py-4 rounded-2xl font-semibold text-base shadow-xl hover:scale-105 transition-all duration-200"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+            </svg>
             Iniciar con Google
           </button>
+          <p className="text-white/20 text-xs">Tus datos son privados y seguros</p>
         </div>
       </div>
     );
   }
 
+  const loading =
+    activeTab === "dashboard" ? txLoading :
+      activeTab === "payments" ? paymentsLoading :
+        activeTab === "investments" ? invLoading : false;
+
+  const showAddButton = activeTab !== "deposit";
+
+  const handleAdd = () => {
+    if (activeTab === "dashboard") setShowTxForm(true);
+    else if (activeTab === "payments") setShowPaymentForm(true);
+    else if (activeTab === "investments") setShowInvestmentForm(true);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-black">
-      {/* Menú lateral para móvil */}
-      <div className="lg:hidden fixed top-4 left-4 z-50">
-        <button onClick={() => setSidebarOpen(true)} className="bg-gray-800 p-2 rounded-xl text-white">
-          <Menu className="w-6 h-6" />
-        </button>
-      </div>
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/70 z-50 lg:hidden" onClick={() => setSidebarOpen(false)}>
-          <div className="w-64 bg-gray-900 h-full p-4" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setSidebarOpen(false)} className="text-white float-right"><X /></button>
-            <SidebarContent activeTab={activeTab} setActiveTab={(tab) => { setActiveTab(tab); setSidebarOpen(false); }} logout={logout} />
+    <div className="min-h-screen bg-[#050810] text-white">
+      {/* HEADER */}
+      <header className="sticky top-0 z-20 bg-[#050810]/90 backdrop-blur-lg border-b border-white/5 px-4 py-3">
+        <div className="max-w-lg mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500 flex items-center justify-center">
+              <Wallet className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-sm leading-tight">Finanzas</h1>
+              <p className="text-white/30 text-[10px] leading-tight">{user.displayName?.split(" ")[0]}</p>
+            </div>
           </div>
-        </div>
-      )}
-
-      <div className="flex">
-        {/* Sidebar para desktop */}
-        <div className="hidden lg:block w-72 bg-gray-900/50 backdrop-blur-sm border-r border-white/10 min-h-screen p-6">
-          <SidebarContent activeTab={activeTab} setActiveTab={setActiveTab} logout={logout} />
-        </div>
-
-        {/* Contenido principal */}
-        <div className="flex-1 p-4 md:p-8">
-          <div className="flex justify-end mb-4 lg:hidden">
-            <button onClick={() => setShowTransactionForm(true)} className="bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 rounded-xl text-white font-semibold flex items-center gap-2">
-              <PlusCircle className="w-5 h-5" /> Nuevo
+          <div className="flex items-center gap-2">
+            {alertCount > 0 && (
+              <button onClick={() => setActiveTab("payments")} className="relative bg-amber-500/20 p-2 rounded-lg">
+                <Bell className="w-4 h-4 text-amber-400" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full text-[9px] font-bold flex items-center justify-center text-black">{alertCount}</span>
+              </button>
+            )}
+            {showAddButton && (
+              <button onClick={handleAdd} className="bg-cyan-500/20 p-2 rounded-lg hover:bg-cyan-500/30 transition-colors">
+                <PlusCircle className="w-4 h-4 text-cyan-400" />
+              </button>
+            )}
+            <button onClick={logout} className="bg-red-500/10 p-2 rounded-lg hover:bg-red-500/20 transition-colors">
+              <LogOut className="w-4 h-4 text-red-400" />
             </button>
           </div>
+        </div>
+      </header>
 
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 rounded-3xl p-6 border border-white/10">
-                  <div className="flex items-center gap-3 text-green-300"><ArrowUpCircle className="w-6 h-6" /> Ingresos</div>
-                  <p className="text-3xl font-bold text-white mt-2">${currentData.income.toFixed(2)}</p>
-                </div>
-                <div className="bg-gradient-to-br from-red-900/40 to-rose-900/40 rounded-3xl p-6 border border-white/10">
-                  <div className="flex items-center gap-3 text-red-300"><ArrowDownCircle className="w-6 h-6" /> Gastos</div>
-                  <p className="text-3xl font-bold text-white mt-2">${currentData.expense.toFixed(2)}</p>
-                </div>
-                <div className="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 rounded-3xl p-6 border border-white/10">
-                  <div className="flex items-center gap-3 text-cyan-300"><Wallet className="w-6 h-6" /> Ahorro</div>
-                  <p className="text-3xl font-bold text-white mt-2">${currentData.savings.toFixed(2)}</p>
-                  <p className={`text-sm ${savingsChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>{savingsChange >= 0 ? '↑' : '↓'} {Math.abs(savingsChange).toFixed(1)}% vs mes anterior</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-800/40 backdrop-blur-sm rounded-3xl p-6 border border-white/10">
-                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><CalendarDays className="w-5 h-5" /> Comparación Mensual</h3>
-                  <Chart options={monthlyComparisonChart.options} series={monthlyComparisonChart.series} type="bar" height={300} />
-                </div>
-                <div className="bg-gray-800/40 backdrop-blur-sm rounded-3xl p-6 border border-white/10">
-                  <h3 className="text-xl font-bold text-white mb-4">Distribución de Gastos</h3>
-                  {categoryData.length > 0 ? (
-                    <Chart options={pieChartOptions} series={categoryData.map(c => c.amount)} type="donut" height={300} />
-                  ) : (
-                    <div className="text-center text-gray-400 py-12">No hay gastos este mes</div>
-                  )}
-                </div>
-              </div>
-
-              <Suggestions totalExpenses={currentData.expense} totalIncome={currentData.income} savings={currentData.savings} topCategory={topCategory} />
-
-              <div className="bg-gray-800/40 backdrop-blur-sm rounded-3xl p-6 border border-white/10">
-                <h3 className="text-xl font-bold text-white mb-4">📋 Últimos Movimientos</h3>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {transactions.slice(0, 10).map(tx => (
-                    <div key={tx.id} className="flex justify-between items-center p-3 rounded-xl bg-gray-900/50">
-                      <div>
-                        <p className="font-medium text-white">{tx.category} {tx.description && `- ${tx.description}`}</p>
-                        <p className="text-xs text-gray-400">{tx.date.toLocaleDateString()}</p>
-                      </div>
-                      <p className={`font-bold ${tx.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
-                        {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
-                      </p>
-                    </div>
-                  ))}
-                  {transactions.length === 0 && <p className="text-gray-400 text-center py-4">No hay movimientos</p>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'payments' && <PaymentManager />}
-          {activeTab === 'investment' && <InvestmentCalculator />}
-          {activeTab === 'profile' && <ProfileView transactions={transactions} payments={payments} />}
+      {/* BOTTOM-STYLE TAB NAV */}
+      <div className="max-w-lg mx-auto px-4 pt-4">
+        <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+          {([
+            { id: "dashboard", icon: TrendingUp, label: "Dashboard", badge: undefined },
+            { id: "payments", icon: Bell, label: "Pagos", badge: alertCount },
+            { id: "investments", icon: BarChart2, label: "Inversiones", badge: undefined },
+            { id: "deposit", icon: CreditCard, label: "Depósitos", badge: undefined },
+          ] as const).map(({ id, icon: Icon, label, badge = undefined }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-medium transition-all duration-200 relative ${activeTab === id ? "bg-white/10 text-white" : "text-white/35 hover:text-white/55"
+                }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+              {badge ? (
+                <span className="absolute top-1 right-2 w-3.5 h-3.5 bg-amber-500 rounded-full text-[8px] font-bold flex items-center justify-center text-black">
+                  {badge}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
       </div>
 
-      {showTransactionForm && <TransactionForm onClose={() => setShowTransactionForm(false)} onSuccess={loadData} />}
+      {/* CONTENT */}
+      <main className="max-w-lg mx-auto px-4 pt-4 pb-8">
+        {loading ? (
+          <div className="space-y-3 animate-pulse">
+            {[1, 2, 3].map((i) => <div key={i} className="bg-[#0b1220] h-24 rounded-2xl" />)}
+          </div>
+        ) : (
+          <>
+            {activeTab === "dashboard" && (
+              <DashboardPanel
+                transactions={transactions}
+                payments={payments}
+                totalInvested={totalInvested}
+                totalCurrentValue={totalCurrentValue}
+                onAddTransaction={() => setShowTxForm(true)}
+                onRemoveTransaction={removeTransaction}
+                onGoToPayments={() => setActiveTab("payments")}
+                onGoToInvestments={() => setActiveTab("investments")}
+              />
+            )}
+            {activeTab === "payments" && (
+              <ScheduledPaymentsPanel
+                payments={payments}
+                onMarkAsPaid={markAsPaid}
+                onRemove={removePayment}
+                onAdd={() => setShowPaymentForm(true)}
+                getDueToday={getDueToday}
+                getUpcoming={getUpcoming}
+                getOverdue={getOverdue}
+              />
+            )}
+            {activeTab === "investments" && (
+              <InvestmentsPanel
+                investments={investments}
+                totalInvested={totalInvested}
+                totalCurrentValue={totalCurrentValue}
+                totalGain={totalGain}
+                totalGainPct={totalGainPct}
+                project={project}
+                onAdd={() => setShowInvestmentForm(true)}
+                onRemove={removeInvestment}
+              />
+            )}
+            {activeTab === "deposit" && (
+              <DepositPanel
+                cards={cards}
+                onAddCard={addCard}
+                onRemoveCard={removeCard}
+                onSetDefault={setDefault}
+                onDeposit={handleDeposit}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* MODALS */}
+      {showTxForm && (
+        <TransactionForm
+          onClose={() => setShowTxForm(false)}
+          onSubmit={(tx) => { addTransaction({ ...tx, userId: user.uid }); setShowTxForm(false); }}
+        />
+      )}
+      {showPaymentForm && (
+        <ScheduledPaymentForm
+          onClose={() => setShowPaymentForm(false)}
+          onSubmit={(p) => { addPayment(p); setShowPaymentForm(false); }}
+        />
+      )}
+      {showInvestmentForm && (
+        <InvestmentForm
+          onClose={() => setShowInvestmentForm(false)}
+          onSubmit={(inv: any) => { addInvestment(inv); setShowInvestmentForm(false); }}
+        />
+      )}
     </div>
   );
 }
-
-// Componente Sidebar reutilizable
-function SidebarContent({ activeTab, setActiveTab, logout }: { activeTab: string; setActiveTab: (tab: any) => void; logout: () => void }) {
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 mb-10">
-        <Wallet className="w-8 h-8 text-cyan-400" />
-        <h1 className="text-2xl font-bold text-white">Finanzas</h1>
-      </div>
-      <nav className="space-y-2 flex-1">
-        <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${activeTab === 'dashboard' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
-          <LayoutDashboard className="w-5 h-5" /> Dashboard
-        </button>
-        <button onClick={() => setActiveTab('payments')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${activeTab === 'payments' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
-          <CreditCard className="w-5 h-5" /> Pagos
-        </button>
-        <button onClick={() => setActiveTab('investment')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${activeTab === 'investment' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
-          <TrendingUp className="w-5 h-5" /> Inversión
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition ${activeTab === 'profile' ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
-          <UserCircle className="w-5 h-5" /> Mi Perfil
-        </button>
-      </nav>
-      <button onClick={logout} className="flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/20 transition mt-auto">
-        <LogOut className="w-5 h-5" /> Cerrar sesión
-      </button>
-    </div>
-  );
-}
-
-export default App;
